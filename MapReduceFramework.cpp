@@ -4,7 +4,7 @@
 
 #include "MapReduceFramework.h"
 
-#include "Barrier/Barrier.h"
+#include "Barrier.h"
 #include <pthread.h>
 #include <atomic>
 #include <iostream>
@@ -30,32 +30,6 @@ void unlock_mutex (pthread_mutex_t *mutex)
       exit (1);
     }
 }
-
-//class KChar : public K2, public K3 {
-// public:
-//  KChar (char c) : c (c)
-//  {}
-//
-//  virtual bool operator< (const K2 &other) const
-//  {
-//    return c < static_cast<const KChar &>(other).c;
-//  }
-//
-//  virtual bool operator< (const K3 &other) const
-//  {
-//    return c < static_cast<const KChar &>(other).c;
-//  }
-//
-//  char c;
-//};
-//
-//class VCount : public V2, public V3 {
-// public:
-//  VCount (unsigned int count) : count (count)
-//  {}
-//
-//  unsigned int count;
-//};
 
 bool compare_keys (IntermediatePair i1, IntermediatePair i2)
 {
@@ -229,7 +203,6 @@ void shuffle (JobContext *job)
             {
               maxKey = context->intermediate_pairs->back ().first;
             }
-
         }
       if (empty_vec_counter == job->num_of_threads)
         {
@@ -238,7 +211,6 @@ void shuffle (JobContext *job)
       IntermediateVec keyVec;
       for (ThreadContext *context : *job->contexts)
         {
-
           if (!context->intermediate_pairs->empty ())
             {
               IntermediatePair pair = context->intermediate_pairs->back ();
@@ -283,7 +255,6 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
                              int multiThreadLevel)
 {
   auto *thread_list = new pthread_t[multiThreadLevel];
-
   auto *barrier = new Barrier (multiThreadLevel);
   auto *new_job = new JobContext (client, inputVec, outputVec, barrier,
                                   multiThreadLevel, thread_list);
@@ -347,7 +318,8 @@ void *action (void *thread_context)
 {
   auto *tc = (ThreadContext *) thread_context;
   JobContext *job = tc->job;
-  while (true)
+
+  while (true) // MAP
     {
       lock_mutex (&job->input_mutex);
       if (job->current_stage == UNDEFINED_STAGE)
@@ -369,18 +341,18 @@ void *action (void *thread_context)
         }
     }
 
-  tc->sort ();
+  tc->sort (); // SORT
 
   job->barrier->barrier (); // everyone finished sort
 
   if (tc->threadID == 0)
     {
-      shuffle (job);
+      shuffle (job); // SHUFFLE
     }
 
   job->barrier->barrier (); // thread 0 finished shuffle and every other thread just waited for him
 
-  while (true)
+  while (true) // REDUCE
     {
       lock_mutex (&job ->reduce_mutex);
       if (*job->progress_counter_reduce < *job->output_element_counter)

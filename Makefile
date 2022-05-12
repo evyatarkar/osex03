@@ -2,15 +2,15 @@ CC=g++
 CXX=g++
 RANLIB=ranlib
 
-LIBSRC=MapReduceFramework.cpp
+LIBSRC=MapReduceFramework.cpp Barrier.h Barrier.cpp
 LIBOBJ=$(LIBSRC:.cpp=.o)
 
 INCS=-I.
 CFLAGS = -Wall -std=c++11 -g $(INCS)
 CXXFLAGS = -Wall -std=c++11 -g $(INCS)
 
-UTHREADSLIB = MapReduceFramework
-TARGETS = $(UTHREADSLIB)
+MAPREDUCELIB = libMapReduceFramework.a
+TARGETS = $(MAPREDUCELIB)
 
 TAR=tar
 TARFLAGS=-cvf
@@ -24,7 +24,7 @@ $(TARGETS): $(LIBOBJ)
 	$(RANLIB) $@
 
 clean:
-	$(RM) $(TARGETS) $(UTHREADSLIB) $(OBJ) $(LIBOBJ) *~ *core
+	$(RM) $(TARGETS) $(MAPREDUCELIB) $(OBJ) $(LIBOBJ) *~ *core
 
 depend:
 	makedepend -- $(CFLAGS) -- $(SRC) $(LIBSRC)
