@@ -174,18 +174,18 @@ class CounterClient : public MapReduceClient {
 TEST(MattanTests, waitAndCloseTest) {
 
   CounterClient client;
-  auto s1 = new VString("This string is full of characters");
-  auto s2 = new VString("Multithreading is awesome");
-  auto s3 = new VString("conditions are race bad");
-//  auto s1 = new VString("abc");
-//  auto s2 = new VString("bcd");
-//  auto s3 = new VString("ddd");
+//  auto s1 = new VString("This string is full of characters");
+//  auto s2 = new VString("Multithreading is awesome");
+//  auto s3 = new VString("conditions are race bad");
+  auto s1 = new VString("abc");
+  auto s2 = new VString("bcd");
+  auto s3 = new VString("ddd");
   client.inputVec.push_back({nullptr, s1});
   client.inputVec.push_back({nullptr, s2});
   client.inputVec.push_back({nullptr, s3});
   JobState state;
   JobState last_state={UNDEFINED_STAGE,0};
-  JobHandle job = startMapReduceJob(client, client.inputVec, client.outputVec, 3);
+  JobHandle job = startMapReduceJob(client, client.inputVec, client.outputVec, 2);
   getJobState(job, &state);
   waitForJob(job);
 

@@ -225,62 +225,63 @@ class JobContext {
           }
       }
   }
-
-  void shuffle (JobContext *job) //, ThreadContext *tc)
-  {
-    job->current_stage = SHUFFLE_STAGE;
-    std::cout << "SHUFFLING BITCHHH" << std::endl;
-    K2 *max_key;
-    int counters[num_of_threads];
-    for (int i = 0; i < num_of_threads; i++)
-      {
-        counters[i] =
-            (int) job->contexts->at (i)->intermediate_pairs->size () - 1;
-      }
-    while (1)
-      {
-        for (int i = 0; i < job->num_of_threads; i++) // find max key for round
-          {
-            if (counters[i] >= 0)
-              {
-                if (max_key == nullptr || max_key
-                                          < job->contexts->at (i)->intermediate_pairs->at (counters[i]).first)
-                  {
-                    max_key = job->contexts->at (i)->intermediate_pairs->at (counters[i]).first;
-                  }
-              }
-          }
-        if (max_key == nullptr)
-          { break; }
-
-        auto *vec_for_key = new IntermediateVec ();
-
-        for (int i = 0;
-             i < job->num_of_threads; i++) // get all pairs with max_key as key
-          {
-            if (counters[i] >= 0)
-              {
-                IntermediatePair cur_pair = job->contexts->at (i)->intermediate_pairs->at (counters[i]);
-                while (!(*cur_pair.first < *max_key
-                         || *max_key < *cur_pair.first))
-                  {
-                    vec_for_key->push_back (cur_pair);
-                    counters[i]--;
-                    (*(job->progress_counter_shuffle))++;
-                    if (counters[i] < 0)
-                      { break; }
-                    cur_pair = job->contexts->at (i)->intermediate_pairs->at (counters[i]);
-                  }
-              }
-          }
-        job->shuffled_intermediate_elements.push_back (vec_for_key);
-        (*(job->output_element_counter))++;
-        max_key = nullptr;
-      }
-    std::cout << "FINISHED SHUFFLING" << std::endl;
-    job->current_stage = REDUCE_STAGE;
-  }
 };
+
+void shuffle (JobContext *job) //, ThreadContext *tc)
+{
+  job->current_stage = SHUFFLE_STAGE;
+  std::cout << "SHUFFLING BITCHHH" << std::endl;
+  K2 *max_key;
+  int counters[job->num_of_threads];
+  for (int i = 0; i < job->num_of_threads; i++)
+    {
+      counters[i] =
+          (int) job->contexts->at (i)->intermediate_pairs->size () - 1;
+    }
+  while (1)
+    {
+      for (int i = 0; i < job->num_of_threads; i++) // find max key for round
+        {
+          if (counters[i] >= 0)
+            {
+              if (max_key == nullptr || max_key
+                                        < job->contexts->at (i)->intermediate_pairs->at (counters[i]).first)
+                {
+                  max_key = job->contexts->at (i)->intermediate_pairs->at (counters[i]).first;
+                }
+            }
+        }
+      if (max_key == nullptr)
+        { break; }
+
+      auto *vec_for_key = new IntermediateVec ();
+
+      for (int i = 0;
+           i < job->num_of_threads; i++) // get all pairs with max_key as key
+        {
+          if (counters[i] >= 0)
+            {
+              IntermediatePair cur_pair = job->contexts->at (i)->intermediate_pairs->at (counters[i]);
+              while (!(*cur_pair.first < *max_key
+                       || *max_key < *cur_pair.first))
+                {
+                  vec_for_key->push_back (cur_pair);
+                  counters[i]--;
+                  (*(job->progress_counter_shuffle))++;
+                  if (counters[i] < 0)
+                    { break; }
+                  cur_pair = job->contexts->at (i)->intermediate_pairs->at (counters[i]);
+                }
+            }
+        }
+      job->shuffled_intermediate_elements.push_back (vec_for_key);
+      (*(job->output_element_counter))++;
+      max_key = nullptr;
+    }
+  std::cout << "FINISHED SHUFFLING" << std::endl;
+  job->current_stage = REDUCE_STAGE;
+}
+
 
 void emit2 (K2 *key, V2 *value, void *context)
 {
@@ -412,7 +413,7 @@ void *action (void *thread_context)
 //  lock_mutex (&job->input_mutex);
   if (tc->threadID == 0)
     {
-      job->shuffle (job);
+      shuffle (job);
     }
 
 //  unlock_mutex (&job->input_mutex);
