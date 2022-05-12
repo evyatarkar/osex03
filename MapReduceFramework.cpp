@@ -68,9 +68,9 @@ class ThreadContext {
  public:
   int threadID;
   Barrier *barrier;
-  IntermediateVec *intermediate_pairs;
   pthread_mutex_t *input_mutex;
   JobContext *job;
+  IntermediateVec *intermediate_pairs;
   int already_joined;
 
   ThreadContext (int id, Barrier *barrier,
@@ -420,6 +420,8 @@ void *action (void *thread_context)
   printf ("got to last barrier: %d\n", tc->threadID);
 
   job->barrier->barrier (); // thread 0 finished shuffle and every other thread just waited for him
+
+  printf ("entering reduce after last barrier: %d\n", tc->threadID);
 
   while (1)
     {
