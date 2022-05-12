@@ -190,21 +190,19 @@ void shuffle (JobContext *job)
   job->current_stage = SHUFFLE_STAGE;
   while (true)
     {
-      K2 *maxKey = nullptr;
-      int empty_vec_counter = 0;
+      K2 *max_key = nullptr;
       for (ThreadContext *context : *job->contexts)
         {
           if (context->intermediate_pairs->empty ())
             {
-              empty_vec_counter++;
               continue;
             }
-          if (maxKey == nullptr || *maxKey < *context->intermediate_pairs->back ().first)
+          if (max_key == nullptr || *max_key < *context->intermediate_pairs->back ().first)
             {
-              maxKey = context->intermediate_pairs->back ().first;
+              max_key = context->intermediate_pairs->back ().first;
             }
         }
-      if (empty_vec_counter == job->num_of_threads)
+      if (max_key == nullptr)
         {
           break;
         }
@@ -214,7 +212,7 @@ void shuffle (JobContext *job)
           if (!context->intermediate_pairs->empty ())
             {
               IntermediatePair pair = context->intermediate_pairs->back ();
-              while (!(*pair.first < *maxKey) && !(*maxKey < *pair.first))
+              while (!(*pair.first < *max_key) && !(*max_key < *pair.first))
                 {
                   keyVec.push_back (pair);
                   context->intermediate_pairs->pop_back ();
@@ -229,6 +227,7 @@ void shuffle (JobContext *job)
         }
       job->shuffled_intermediate_elements.push_back (keyVec);
       (*(job->output_element_counter))++;
+      max_key = nullptr;
     }
   job->current_stage = REDUCE_STAGE;
 }

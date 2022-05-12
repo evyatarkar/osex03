@@ -1,18 +1,15 @@
-magal.gafni, morv.96
-Magal Gafni (315857052), Mor Vazana (315658831)
-EX: 3
+evyatark, ronb1996
+Evyatar Karasik (312205388), Ron Buchnic (315362145)
+
+
+EX: 03
 
 FILES:
 MapReduceFramework.cpp
-Barrier.cpp
 Barrier.h
+Barrier.cpp
 Makefile
 README
 
 
 REMARKS:
-- in the shuffle phase to be most efficient we decided to find the max key and according to it iterate
-through all thread vectors and create a vector with this key. we made sure we popped all the pairs with the current max
-key. Because the vectors are sorted it guaranties that the max element will be at the end and we don't need to look for
-them through the whole vector.
--  we used atomic counter for all the phases in order to calculate the percentage correctly.
