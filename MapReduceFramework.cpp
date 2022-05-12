@@ -101,7 +101,7 @@ class JobContext {
   stage_t current_stage;
   const MapReduceClient *client;
   const InputVec *input_vec;
-  std::vector<IntermediateVec *> shuffled_intermediate_elements;
+  std::vector<IntermediateVec> shuffled_intermediate_elements;
   OutputVec *output_vec;
 
   Barrier *barrier;
@@ -252,36 +252,95 @@ void shuffle (JobContext *job) //, ThreadContext *tc)
             }
         }
       if (max_key == nullptr)
-        { break; }
+        {
+          max_key = job->contexts->at (0)->intermediate_pairs->at (0).first;
+          break;
+        }
 
-      auto *vec_for_key = new IntermediateVec ();
+//      auto *vec_for_key = new IntermediateVec ();
+      IntermediateVec vec_for_key;
 
       for (int i = 0;
            i < job->num_of_threads; i++) // get all pairs with max_key as key
         {
           if (counters[i] >= 0)
             {
-              IntermediatePair cur_pair = job->contexts->at (i)->intermediate_pairs->at (counters[i]);
-              while (!(*cur_pair.first < *max_key
-                       || *max_key < *cur_pair.first))
+              IntermediatePair *cur_pair = &(job->contexts->at (i)->intermediate_pairs->at (counters[i]));
+              while (!(*cur_pair->first < *max_key
+                       || *max_key < *cur_pair->first))
                 {
-                  vec_for_key->push_back (cur_pair);
+                  vec_for_key.push_back (*cur_pair);
                   counters[i]--;
                   (*(job->progress_counter_shuffle))++;
                   if (counters[i] < 0)
                     { break; }
-                  cur_pair = job->contexts->at (i)->intermediate_pairs->at (counters[i]);
+                  cur_pair = &(job->contexts->at (i)->intermediate_pairs->at (counters[i]));
                 }
             }
         }
       job->shuffled_intermediate_elements.push_back (vec_for_key);
       (*(job->output_element_counter))++;
       max_key = nullptr;
+//      delete vec_for_key;
     }
+
   std::cout << "FINISHED SHUFFLING" << std::endl;
   job->current_stage = REDUCE_STAGE;
 }
 
+void shufflePhase (JobContext *job)
+{
+  job->current_stage = SHUFFLE_STAGE;
+//  ctx->jobc->state->percentage = 0;
+  while (1)
+    {
+      K2 *maxKey = nullptr;
+      long unsigned int numOfEmpty = 0;
+      for (ThreadContext *context : *job->contexts)
+        {
+          if (context->intermediate_pairs->empty ())
+            {
+              numOfEmpty++;
+              continue;
+            }
+          if (maxKey == nullptr
+              || *maxKey < *context->intermediate_pairs->back ().first)
+            {
+              maxKey = context->intermediate_pairs->back ().first;
+            }
+
+        }
+      if (numOfEmpty == job->num_of_threads)
+        {
+          break;
+        }
+      IntermediateVec keyVec;
+      for (ThreadContext *context : *job->contexts)
+        {
+
+          if (!context->intermediate_pairs->empty ())
+            {
+              IntermediatePair pair = context->intermediate_pairs->back ();
+              while (!(*pair.first < *maxKey) && !(*maxKey < *pair.first))
+                {
+                  keyVec.push_back (pair);
+                  context->intermediate_pairs->pop_back ();
+                  *(job->progress_counter_shuffle)++;
+                  if (context->intermediate_pairs->empty ())
+                    {
+                      break;
+                    }
+                  pair = context->intermediate_pairs->back ();
+                }
+            }
+        }
+      job->shuffled_intermediate_elements.push_back (keyVec);
+      (*(job->output_element_counter))++;
+    }
+  job->current_stage = REDUCE_STAGE;
+//  ctx->jobc->vecOfVecSize = ctx->jobc->vecOfVec.size();
+//  ctx->jobc->freeIndex = 0;
+}
 
 void emit2 (K2 *key, V2 *value, void *context)
 {
@@ -295,8 +354,13 @@ void emit2 (K2 *key, V2 *value, void *context)
 void emit3 (K3 *key, V3 *value, void *context)
 {
   auto *thread_context = (ThreadContext *) context;
-  auto new_pair = OutputPair (key, value);
-  thread_context->job->output_vec->push_back (new_pair); // TODO check if added to vec OK
+
+  lock_mutex (&thread_context->job->input_mutex);
+  OutputPair pair = {key, value};
+  thread_context->job->output_vec->push_back (pair);
+  unlock_mutex (&thread_context->job->input_mutex);
+//  auto new_pair = OutputPair (key, value);
+//  thread_context->job->output_vec->push_back (new_pair); // TODO check if added to vec OK
 
 }
 
@@ -383,9 +447,9 @@ void *action (void *thread_context)
         {
           int next_index = (*(job->progress_counter_map))++;
           unlock_mutex (&job->input_mutex);
-          std::cout << "Thread " << tc->threadID << " got mutex for element " << next_index << std::endl;
+          std::cout << "Thread " << tc->threadID << " got mutex for element "
+                    << next_index << std::endl;
           InputPair element = (job->input_vec)->at (next_index);
-
 
           job->client->map (element.first, element.second, tc);
         }
@@ -413,7 +477,8 @@ void *action (void *thread_context)
 //  lock_mutex (&job->input_mutex);
   if (tc->threadID == 0)
     {
-      shuffle (job);
+//      shuffle (job);
+      shufflePhase (job);
     }
 
 //  unlock_mutex (&job->input_mutex);
@@ -422,24 +487,46 @@ void *action (void *thread_context)
 
   job->barrier->barrier (); // thread 0 finished shuffle and every other thread just waited for him
 
-  printf ("entering reduce after last barrier: %d\n", tc->threadID);
+  //printf ("entering reduce after last barrier: %d\n", tc->threadID);
+//  while (1)
+//    {
+//      lock_mutex (&job->reduce_mutex);
+//      if (job->get_percentage (REDUCE_STAGE) < 100)
+//        {
+//          int next_index = (*(job->progress_counter_reduce))++; // TODO if crashes its here
+//          auto element = job->shuffled_intermediate_elements.at (next_index);
+//          unlock_mutex (&job->reduce_mutex);
+//          job->client->reduce (&element, tc);
+//        }
+//      else
+//        {
+//          unlock_mutex (&job->reduce_mutex);
+//          break;
+//        }
+//    }
 
   while (1)
     {
-      lock_mutex (&job->reduce_mutex);
-      if (job->get_percentage (REDUCE_STAGE) < 100)
+      lock_mutex (&job ->reduce_mutex);
+      if (*job->progress_counter_reduce < *job->output_element_counter)
         {
           int next_index = (*(job->progress_counter_reduce))++; // TODO if crashes its here
-          auto element = job->shuffled_intermediate_elements.at (next_index);
+//  int oldIndex = ctx->jobc->freeIndex++;
+          if (next_index >= *job->output_element_counter)
+            {
+              unlock_mutex (&job->reduce_mutex);
+              return (void *) 1;
+            }
+
           unlock_mutex (&job->reduce_mutex);
-          job->client->reduce (element, tc);
+          IntermediateVec keyVec = job->shuffled_intermediate_elements.at (next_index);
+//  ctx->threadc->reduceVectorLen = keyVec.size ();
+          job->client->reduce (&keyVec, tc);
         }
-      else
-        {
-          unlock_mutex (&job->reduce_mutex);
+        else{
+          unlock_mutex(&job->reduce_mutex);
           break;
         }
     }
-
   return (void *) 1;
 }
