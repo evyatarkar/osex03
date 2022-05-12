@@ -6,12 +6,10 @@
 
 #include "Barrier/Barrier.h"
 #include <pthread.h>
-#include <cstdio>
 #include <atomic>
 #include <iostream>
 #include <algorithm>
 
-typedef void *(*action_func) (void *);
 void *action (void *);
 class JobContext;
 
@@ -67,18 +65,12 @@ bool compare_keys (IntermediatePair i1, IntermediatePair i2)
 class ThreadContext {
  public:
   int threadID;
-  Barrier *barrier;
-  pthread_mutex_t *input_mutex;
   JobContext *job;
   IntermediateVec *intermediate_pairs;
   int already_joined;
 
-  ThreadContext (int id, Barrier *barrier,
-                 pthread_mutex_t *input_mutex_,
-                 JobContext *job_, IntermediateVec *intermediate_vec_) :
-      threadID (id), barrier (barrier),
-      input_mutex (input_mutex_),
-      job (job_), intermediate_pairs (intermediate_vec_), already_joined (0)
+  ThreadContext (int id, JobContext *job_, IntermediateVec *intermediate_vec_) :
+      threadID (id), job (job_), intermediate_pairs (intermediate_vec_), already_joined (0)
   {}
 
   ~ThreadContext ()
@@ -86,13 +78,11 @@ class ThreadContext {
     delete intermediate_pairs;
   }
 
-  void sort ()
+  void sort () const
   {
-    std::cout << "thread - " << threadID << " started sorting" << std::endl;
     std::sort (intermediate_pairs->begin (),
                intermediate_pairs->end (),
                compare_keys);
-    std::cout << "thread - " << threadID << " finished sorting" << std::endl;
   }
 };
 
@@ -148,7 +138,6 @@ class JobContext {
 
     size_of_input = input_vec->size ();
     contexts = new std::vector<ThreadContext *> ();
-//    shuffled_intermediate_elements = new std::vector<IntermediateVec *> ();
     progress_counter_map = new std::atomic<int> (0);
     progress_counter_shuffle = new std::atomic<int> (0);
     progress_counter_reduce = new std::atomic<int> (0);
@@ -179,16 +168,11 @@ class JobContext {
     delete intermediate_element_counter;
     delete output_element_counter;
     delete barrier;
-//    delete shuffled_intermediate_elements;
     for (auto context: *contexts)
       {
         delete context;
       }
     delete contexts;
-//    for (auto vec: *shuffled_intermediate_elements)
-//      {
-//        delete vec;
-//      }
     delete[] threads;
   }
 
@@ -213,7 +197,7 @@ class JobContext {
     return 0;
   }
 
-  void init_pairs (IntermediatePair *pairs)
+  void init_pairs (IntermediatePair *pairs) const
   {
     for (int i = 0; i < num_of_threads; i++)
       {
@@ -227,90 +211,27 @@ class JobContext {
   }
 };
 
-void shuffle (JobContext *job) //, ThreadContext *tc)
+void shuffle (JobContext *job)
 {
   job->current_stage = SHUFFLE_STAGE;
-  std::cout << "SHUFFLING BITCHHH" << std::endl;
-  K2 *max_key;
-  int counters[job->num_of_threads];
-  for (int i = 0; i < job->num_of_threads; i++)
-    {
-      counters[i] =
-          (int) job->contexts->at (i)->intermediate_pairs->size () - 1;
-    }
-  while (1)
-    {
-      for (int i = 0; i < job->num_of_threads; i++) // find max key for round
-        {
-          if (counters[i] >= 0)
-            {
-              if (max_key == nullptr || max_key
-                                        < job->contexts->at (i)->intermediate_pairs->at (counters[i]).first)
-                {
-                  max_key = job->contexts->at (i)->intermediate_pairs->at (counters[i]).first;
-                }
-            }
-        }
-      if (max_key == nullptr)
-        {
-          max_key = job->contexts->at (0)->intermediate_pairs->at (0).first;
-          break;
-        }
-
-//      auto *vec_for_key = new IntermediateVec ();
-      IntermediateVec vec_for_key;
-
-      for (int i = 0;
-           i < job->num_of_threads; i++) // get all pairs with max_key as key
-        {
-          if (counters[i] >= 0)
-            {
-              IntermediatePair *cur_pair = &(job->contexts->at (i)->intermediate_pairs->at (counters[i]));
-              while (!(*cur_pair->first < *max_key
-                       || *max_key < *cur_pair->first))
-                {
-                  vec_for_key.push_back (*cur_pair);
-                  counters[i]--;
-                  (*(job->progress_counter_shuffle))++;
-                  if (counters[i] < 0)
-                    { break; }
-                  cur_pair = &(job->contexts->at (i)->intermediate_pairs->at (counters[i]));
-                }
-            }
-        }
-      job->shuffled_intermediate_elements.push_back (vec_for_key);
-      (*(job->output_element_counter))++;
-      max_key = nullptr;
-//      delete vec_for_key;
-    }
-
-  std::cout << "FINISHED SHUFFLING" << std::endl;
-  job->current_stage = REDUCE_STAGE;
-}
-
-void shufflePhase (JobContext *job)
-{
-  job->current_stage = SHUFFLE_STAGE;
-//  ctx->jobc->state->percentage = 0;
-  while (1)
+  while (true)
     {
       K2 *maxKey = nullptr;
-      long unsigned int numOfEmpty = 0;
+      int empty_vec_counter = 0;
       for (ThreadContext *context : *job->contexts)
         {
           if (context->intermediate_pairs->empty ())
             {
-              numOfEmpty++;
+              empty_vec_counter++;
               continue;
             }
-          if (maxKey == nullptr
-              || *maxKey < *context->intermediate_pairs->back ().first)
+          if (maxKey == nullptr || *maxKey < *context->intermediate_pairs->back ().first)
             {
               maxKey = context->intermediate_pairs->back ().first;
             }
 
         }
-      if (numOfEmpty == job->num_of_threads)
+      if (empty_vec_counter == job->num_of_threads)
         {
           break;
         }
@@ -325,7 +246,7 @@ void shufflePhase (JobContext *job)
                 {
                   keyVec.push_back (pair);
                   context->intermediate_pairs->pop_back ();
-                  *(job->progress_counter_shuffle)++;
+                  (*(job->progress_counter_shuffle))++;
                   if (context->intermediate_pairs->empty ())
                     {
                       break;
@@ -338,37 +259,29 @@ void shufflePhase (JobContext *job)
       (*(job->output_element_counter))++;
     }
   job->current_stage = REDUCE_STAGE;
-//  ctx->jobc->vecOfVecSize = ctx->jobc->vecOfVec.size();
-//  ctx->jobc->freeIndex = 0;
 }
 
 void emit2 (K2 *key, V2 *value, void *context)
 {
   auto *thread_context = (ThreadContext *) context;
   auto new_pair = IntermediatePair (key, value);
-  thread_context->intermediate_pairs->push_back (new_pair); // TODO check if added to vec OK
-
+  thread_context->intermediate_pairs->push_back (new_pair);
   (*(thread_context->job->intermediate_element_counter))++;
 }
 
 void emit3 (K3 *key, V3 *value, void *context)
 {
   auto *thread_context = (ThreadContext *) context;
-
   lock_mutex (&thread_context->job->input_mutex);
   OutputPair pair = {key, value};
   thread_context->job->output_vec->push_back (pair);
   unlock_mutex (&thread_context->job->input_mutex);
-//  auto new_pair = OutputPair (key, value);
-//  thread_context->job->output_vec->push_back (new_pair); // TODO check if added to vec OK
-
 }
 
 JobHandle startMapReduceJob (const MapReduceClient &client,
                              const InputVec &inputVec, OutputVec &outputVec,
                              int multiThreadLevel)
 {
-//  pthread_t thread_list[multiThreadLevel];
   auto *thread_list = new pthread_t[multiThreadLevel];
 
   auto *barrier = new Barrier (multiThreadLevel);
@@ -377,9 +290,8 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
 
   for (int tid = 0; tid < multiThreadLevel; tid++)
     {
-      IntermediateVec *intermediate_pairs = new IntermediateVec ();
-      ThreadContext *new_context = new ThreadContext (tid, barrier, &new_job->input_mutex,
-                                                      new_job, intermediate_pairs);
+      auto *intermediate_pairs = new IntermediateVec ();
+      auto *new_context = new ThreadContext (tid, new_job, intermediate_pairs);
       new_job->contexts->push_back (new_context);
       pthread_create (new_job->threads + tid, nullptr, &action, new_context);
     }
@@ -389,8 +301,9 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
 void getJobState (JobHandle job, JobState *state)
 {
   auto *job_ = (JobContext *) job;
-  state->stage = job_->current_stage;
-  state->percentage = job_->get_percentage (job_->current_stage);
+  auto  cur_stage = job_->current_stage;
+  state->stage = cur_stage;
+  state->percentage = job_->get_percentage (cur_stage);
 }
 
 void waitForJob (JobHandle job)
@@ -434,84 +347,45 @@ void *action (void *thread_context)
 {
   auto *tc = (ThreadContext *) thread_context;
   JobContext *job = tc->job;
-  while (1)
+  while (true)
     {
       lock_mutex (&job->input_mutex);
       if (job->current_stage == UNDEFINED_STAGE)
         {
-          std::cout << "thread - " << tc->threadID << " changes state to MAP"
-                    << std::endl;
           job->current_stage = MAP_STAGE;
         }
       if (*job->progress_counter_map < job->size_of_input)
         {
           int next_index = (*(job->progress_counter_map))++;
           unlock_mutex (&job->input_mutex);
-          std::cout << "Thread " << tc->threadID << " got mutex for element "
-                    << next_index << std::endl;
           InputPair element = (job->input_vec)->at (next_index);
 
           job->client->map (element.first, element.second, tc);
         }
       else
         {
-          std::cout << "thread - " << tc->threadID
-                    << " unlocking mutex from else in mapping" << std::endl;
           unlock_mutex (&job->input_mutex);
           break;
         }
     }
-  printf ("got to sort. thread: %d\n", tc->threadID);
 
   tc->sort ();
-//  std::cout << "thread - " << tc->threadID << " started sorting" << std::endl;
-//  std::sort (tc->intermediate_pairs->begin (),
-//             tc->intermediate_pairs->end (),
-//             compare_keys);
-//  std::cout << "thread - " << tc->threadID << " finished sorting" << std::endl;
-
-  printf ("got to first barrier: %d\n", tc->threadID);
 
   job->barrier->barrier (); // everyone finished sort
 
-//  lock_mutex (&job->input_mutex);
   if (tc->threadID == 0)
     {
-//      shuffle (job);
-      shufflePhase (job);
+      shuffle (job);
     }
-
-//  unlock_mutex (&job->input_mutex);
-
-  printf ("got to last barrier: %d\n", tc->threadID);
 
   job->barrier->barrier (); // thread 0 finished shuffle and every other thread just waited for him
 
-  //printf ("entering reduce after last barrier: %d\n", tc->threadID);
-//  while (1)
-//    {
-//      lock_mutex (&job->reduce_mutex);
-//      if (job->get_percentage (REDUCE_STAGE) < 100)
-//        {
-//          int next_index = (*(job->progress_counter_reduce))++; // TODO if crashes its here
-//          auto element = job->shuffled_intermediate_elements.at (next_index);
-//          unlock_mutex (&job->reduce_mutex);
-//          job->client->reduce (&element, tc);
-//        }
-//      else
-//        {
-//          unlock_mutex (&job->reduce_mutex);
-//          break;
-//        }
-//    }
-
-  while (1)
+  while (true)
     {
       lock_mutex (&job ->reduce_mutex);
       if (*job->progress_counter_reduce < *job->output_element_counter)
         {
           int next_index = (*(job->progress_counter_reduce))++; // TODO if crashes its here
-//  int oldIndex = ctx->jobc->freeIndex++;
           if (next_index >= *job->output_element_counter)
             {
               unlock_mutex (&job->reduce_mutex);
@@ -520,10 +394,10 @@ void *action (void *thread_context)
 
           unlock_mutex (&job->reduce_mutex);
           IntermediateVec keyVec = job->shuffled_intermediate_elements.at (next_index);
-//  ctx->threadc->reduceVectorLen = keyVec.size ();
           job->client->reduce (&keyVec, tc);
         }
-        else{
+      else
+        {
           unlock_mutex(&job->reduce_mutex);
           break;
         }
